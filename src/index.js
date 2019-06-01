@@ -21,10 +21,14 @@ export default class Prerendering {
    * @property {array} routes=[] - 需进行预渲染的页面路径集合
    * @property {boolean} headless=true - Chromium headeless 模式
    * @property {func} postProcess=()=>{} - 针对构建结果及输出目录进行修正
-   * @property {array} port=9527 Chromium 启动端口
    * @property {object} minify={ collapseBooleanAttributes: true,collapseWhitespace: true,decodeEntities: true,keepClosingSlash: true,sortAttributes: true}针对构建产物进行压缩
    */
   constructor(options) {
+    // const { isIllegal, errorInfo } = this.checkOptions(options)
+    // if (isIllegal) {
+    //   throw new Error(errorInfo)
+    // }
+
     this._options = options
   }
 
@@ -34,21 +38,90 @@ export default class Prerendering {
   }
 
   afterEmit = async (compilation, done) => {
-    const { headless = true } = this._options
+    const { headless = true, routes = [] } = this._options
     try {
       const browser = await puppeteer.launch({
         headless
       })
 
-      const page = await browser.newPage()
+      const currentPage = await browser.newPage()
+      currentPage.setRequestInterception(true)
 
-      await page.goto('https://baidu.com')
+      currentPage.on('request', interceptedRequest => {
+        console.log(interceptedRequest.url())
+        if (interceptedRequest.url().startsWith('https://www.baidu.com/img/')) {
+          interceptedRequest.continue({
+            url: 'http://localhost:9527/daily.png'
+          })
+        } else interceptedRequest.continue()
+      })
 
-      await page.screenshot({
+      await currentPage.goto('https://baidu.com')
+
+      await currentPage.screenshot({
         path: 'example.png'
       })
     } catch (e) {
-      console.log(e)
+      console.error(e)
     }
   }
+
+  checkOptions = options => {
+    const CorrespondingType = {
+      staticDir: {
+        type: 'string',
+        validator: item => item.startsWith('/')
+      },
+      staticDir: {
+        type: 'string',
+        validator: item => item.startsWith('/')
+      },
+      outputDir: {
+        type: 'string',
+        validator: item => item.startsWith('/')
+      },
+      indexPath: {
+        type: 'string',
+        validator: item => item.startsWith('/')
+      },
+      routes: {
+        type: 'array',
+        validator: item => item.startsWith('/')
+      },
+      headless: {
+        type: 'boolean'
+      },
+      postProcess: {
+        type: 'function'
+      },
+      minify: {
+        type: 'object',
+        standard: [
+          'collapseBooleanAttributes',
+          'collapseWhitespace',
+          'decodeEntities',
+          'keepClosingSlash',
+          'sortAttributes'
+        ]
+      }
+    }
+
+    const {
+      staticDir,
+      outputDir,
+      indexPath,
+      routes,
+      headless,
+      postProcess,
+      port,
+      minify
+    } = options
+  }
+
+  getType = v =>
+    v === undefined
+      ? 'undefined'
+      : v === null
+      ? 'null'
+      : v.constructor.name.toLowerCase()
 }
