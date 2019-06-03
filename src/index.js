@@ -1,5 +1,6 @@
-import path from 'path'
 import puppeteer from 'puppeteer'
+import Server from './server'
+import render from './render'
 /**
  * 插件的基本构成:
  * 1. 一个具名 JavaScript 函数
@@ -21,15 +22,21 @@ export default class Prerendering {
    * @property {array} routes=[] - 需进行预渲染的页面路径集合
    * @property {boolean} headless=true - Chromium headeless 模式
    * @property {func} postProcess=()=>{} - 针对构建结果及输出目录进行修正
+   * @property {func} port=()=>{} - 预渲染服务端口
    * @property {object} minify={ collapseBooleanAttributes: true,collapseWhitespace: true,decodeEntities: true,keepClosingSlash: true,sortAttributes: true}针对构建产物进行压缩
+   * @property {string} cdn='' CDN 字符串
+   * @property {number} renderTimeout=0 几秒后渲染
+   * @property {func} requestProcess=()=>{} 针对CDN资源做拦截处理
    */
   constructor(options) {
     // const { isIllegal, errorInfo } = this.checkOptions(options)
     // if (isIllegal) {
     //   throw new Error(errorInfo)
     // }
+    const { staticDir, port = 9527 } = options
 
     this._options = options
+    this._server = new Server({ staticDir, port })
   }
 
   apply = compiler => {
@@ -38,90 +45,33 @@ export default class Prerendering {
   }
 
   afterEmit = async (compilation, done) => {
-    const { headless = true, routes = [] } = this._options
+    const {
+      cdn,
+      port,
+      headless = true,
+      routes = [],
+      requestProcess,
+      renderTimeout
+    } = this._options
     try {
+      this._server.init()
+
       const browser = await puppeteer.launch({
         headless
       })
 
-      const currentPage = await browser.newPage()
-      currentPage.setRequestInterception(true)
-
-      currentPage.on('request', interceptedRequest => {
-        console.log(interceptedRequest.url())
-        if (interceptedRequest.url().startsWith('https://www.baidu.com/img/')) {
-          interceptedRequest.continue({
-            url: 'http://localhost:9527/daily.png'
-          })
-        } else interceptedRequest.continue()
-      })
-
-      await currentPage.goto('https://baidu.com')
-
-      await currentPage.screenshot({
-        path: 'example.png'
+      routes.forEach(async route => {
+        await render({
+          cdn,
+          port,
+          route,
+          browser,
+          requestProcess,
+          renderTimeout
+        })
       })
     } catch (e) {
       console.error(e)
     }
   }
-
-  checkOptions = options => {
-    const CorrespondingType = {
-      staticDir: {
-        type: 'string',
-        validator: item => item.startsWith('/')
-      },
-      staticDir: {
-        type: 'string',
-        validator: item => item.startsWith('/')
-      },
-      outputDir: {
-        type: 'string',
-        validator: item => item.startsWith('/')
-      },
-      indexPath: {
-        type: 'string',
-        validator: item => item.startsWith('/')
-      },
-      routes: {
-        type: 'array',
-        validator: item => item.startsWith('/')
-      },
-      headless: {
-        type: 'boolean'
-      },
-      postProcess: {
-        type: 'function'
-      },
-      minify: {
-        type: 'object',
-        standard: [
-          'collapseBooleanAttributes',
-          'collapseWhitespace',
-          'decodeEntities',
-          'keepClosingSlash',
-          'sortAttributes'
-        ]
-      }
-    }
-
-    const {
-      staticDir,
-      outputDir,
-      indexPath,
-      routes,
-      headless,
-      postProcess,
-      port,
-      minify
-    } = options
-  }
-
-  getType = v =>
-    v === undefined
-      ? 'undefined'
-      : v === null
-      ? 'null'
-      : v.constructor.name.toLowerCase()
 }
