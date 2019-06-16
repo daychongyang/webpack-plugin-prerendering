@@ -79,9 +79,11 @@ export default class Prerendering {
           )
         ).then(() => {
           console.log('Prerendering Success!')
-          // server.close()
-          // browser.close()
-          // resolve()
+
+          /** 查看实际效果 */
+          server.close()
+          browser.close()
+          resolve()
         })
       } catch (e) {
         reject()

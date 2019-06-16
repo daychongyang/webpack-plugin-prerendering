@@ -60,9 +60,10 @@ export default function render({
         }
       })
 
-      // await currentPage.close()
+      /** 查看实际效果 */
+      await currentPage.close()
 
-      // resolve()
+      resolve()
     })
     await currentPage.goto(`http://localhost:${port}${route}`)
   })
