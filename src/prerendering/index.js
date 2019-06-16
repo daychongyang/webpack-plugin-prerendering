@@ -1,6 +1,8 @@
 import puppeteer from 'puppeteer'
+import checkOptions from './check-options'
 import Server from './server'
 import render from './render'
+
 /**
  * 插件的基本构成:
  * 1. 一个具名 JavaScript 函数
@@ -29,10 +31,11 @@ export default class Prerendering {
    * @property {func} requestProcess=()=>{} 针对CDN资源做拦截处理
    */
   constructor(options) {
-    // const { isIllegal, errorInfo } = this.checkOptions(options)
-    // if (isIllegal) {
-    //   throw new Error(errorInfo)
-    // }
+    const isInvalid = checkOptions(options)
+    if (isInvalid) {
+      throw new Error(`Initialization failed !`)
+    }
+
     const { staticDir, port = 9527 } = options
 
     this._options = options
@@ -41,37 +44,48 @@ export default class Prerendering {
 
   apply = compiler => {
     /** 编译资源 -> 磁盘 */
-    compiler.hooks.afterEmit.tapAsync('Prerendering', this.afterEmit)
+    this._compiler = compiler
+    compiler.hooks.afterEmit.tapPromise('Prerendering', this.afterEmit)
   }
 
-  afterEmit = async (compilation, done) => {
-    const {
-      cdn,
-      port,
-      headless = true,
-      routes = [],
-      requestProcess,
-      renderTimeout
-    } = this._options
-    try {
-      this._server.init()
+  afterEmit = compilation =>
+    new Promise(async (resolve, reject) => {
+      const {
+        cdn,
+        port,
+        headless = true,
+        routes = [],
+        requestProcess,
+        renderTimeout
+      } = this._options
+      try {
+        const server = this._server.init()
 
-      const browser = await puppeteer.launch({
-        headless
-      })
-
-      routes.forEach(async route => {
-        await render({
-          cdn,
-          port,
-          route,
-          browser,
-          requestProcess,
-          renderTimeout
+        const browser = await puppeteer.launch({
+          headless
         })
-      })
-    } catch (e) {
-      console.error(e)
-    }
-  }
+
+        Promise.all(
+          routes.map(async route =>
+            render({
+              cdn,
+              port,
+              route,
+              browser,
+              requestProcess,
+              renderTimeout,
+              compilerFS: this._compiler.outputFileSystem
+            })
+          )
+        ).then(() => {
+          console.log('Prerendering Success!')
+          // server.close()
+          // browser.close()
+          // resolve()
+        })
+      } catch (e) {
+        reject()
+        console.error(e)
+      }
+    })
 }
